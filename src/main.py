@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -8,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, HttpUrl
 
+from src.domain.llm_config import LlmConfig
 from src.infra.drive_downloader import DriveDownloader
 from src.infra.gemini_client import GeminiClient
 from src.infra.webhook_sender import WebhookSender
@@ -34,10 +36,17 @@ _use_case = ExtractReceiptUseCase(
 )
 
 
-# --- Request model ---
+# --- Request models ---
+class OptionalConfigRequest(BaseModel):
+    gemini_api_key: Optional[str] = None
+    llm_model: Optional[str] = None
+    max_tokens: Optional[int] = None
+
+
 class ReceiptRequest(BaseModel):
-    url: str
+    receipt_url: str
     webhook_url: HttpUrl
+    optional_config: Optional[OptionalConfigRequest] = None
 
 
 # --- Exception handlers ---
@@ -69,15 +78,28 @@ async def webhook_error_handler(_: Request, exc: WebhookError):
 # --- Endpoint ---
 @app.post("/api/receipt")
 async def extract_receipt(request: ReceiptRequest):
-    if not _api_key:
+    api_key = _api_key
+    if request.optional_config and request.optional_config.gemini_api_key:
+        api_key = request.optional_config.gemini_api_key
+
+    if not api_key:
         return JSONResponse(
             status_code=401,
             content={"error": "GEMINI_API_KEY not configured."},
         )
 
+    llm_config = None
+    if request.optional_config:
+        llm_config = LlmConfig(
+            gemini_api_key=request.optional_config.gemini_api_key,
+            llm_model=request.optional_config.llm_model,
+            max_tokens=request.optional_config.max_tokens,
+        )
+
     input_data = ExtractReceiptInput(
-        url=request.url,
+        receipt_url=request.receipt_url,
         webhook_url=str(request.webhook_url),
+        optional_config=llm_config,
     )
     result = await _use_case.execute(input_data)
 

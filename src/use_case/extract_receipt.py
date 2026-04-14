@@ -1,14 +1,17 @@
 from dataclasses import dataclass
+from typing import Optional
 
 from src.domain.gemini_gateway import IGeminiGateway
+from src.domain.llm_config import LlmConfig
 from src.infra.drive_downloader import DriveDownloader
 from src.infra.webhook_sender import WebhookSender
 
 
 @dataclass
 class ExtractReceiptInput:
-    url: str
+    receipt_url: str
     webhook_url: str
+    optional_config: Optional[LlmConfig] = None
 
 
 @dataclass
@@ -34,17 +37,19 @@ class ExtractReceiptUseCase:
         self._webhook_sender = webhook_sender
 
     async def execute(self, input_data: ExtractReceiptInput) -> ExtractReceiptOutput:
-        print(f"[extract_receipt] Iniciando processamento da URL: {input_data.url}")
+        print(f"[extract_receipt] Iniciando processamento da URL: {input_data.receipt_url}")
 
         try:
-            image_bytes, mime_type = await self._downloader.download(input_data.url)
+            image_bytes, mime_type = await self._downloader.download(input_data.receipt_url)
             print(f"[extract_receipt] Download concluído — {len(image_bytes)} bytes, tipo: {mime_type}")
         except Exception as exc:
             print(f"[extract_receipt] ERRO no download da imagem: {exc}")
             raise
 
         try:
-            receipt = await self._gemini_gateway.analyze_receipt(image_bytes, mime_type)
+            receipt = await self._gemini_gateway.analyze_receipt(
+                image_bytes, mime_type, input_data.optional_config,
+            )
             print(f"[extract_receipt] LLM retornou dados — datetime={receipt.datetime}, amount={receipt.amount}, type={receipt.type}")
         except Exception as exc:
             print(f"[extract_receipt] ERRO na chamada à LLM: {exc}")
@@ -54,7 +59,7 @@ class ExtractReceiptUseCase:
             "datetime": receipt.datetime,
             "amount": receipt.amount,
             "type": receipt.type,
-            "receipt_url": input_data.url,
+            "receipt_url": input_data.receipt_url,
         }
 
         try:
@@ -68,7 +73,7 @@ class ExtractReceiptUseCase:
             datetime=receipt.datetime,
             amount=receipt.amount,
             type=receipt.type,
-            receipt_url=input_data.url,
+            receipt_url=input_data.receipt_url,
             webhook_status="sent",
         )
 

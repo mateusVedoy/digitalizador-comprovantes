@@ -1,9 +1,15 @@
+from typing import Optional
+
 from google import genai
 from google.genai import types
 
 from src.domain.gemini_gateway import IGeminiGateway
+from src.domain.llm_config import LlmConfig
 from src.domain.receipt_data import ReceiptData
-from src.shared.errors import GeminiError, ExtractionError
+from src.shared.errors import ExtractionError, GeminiError
+
+_DEFAULT_MODEL = "gemini-3-flash-preview"
+_DEFAULT_MAX_TOKENS = 4096
 
 _PROMPT = """Você é um assistente financeiro que analisa comprovantes.
 
@@ -50,22 +56,40 @@ class GeminiClient(IGeminiGateway):
     """Gemini gateway implementation: prompt, image+tool, parse tool call."""
 
     def __init__(self, api_key: str):
+        self._api_key = api_key
         self._client = genai.Client(api_key=api_key)
 
-    async def analyze_receipt(self, image_bytes: bytes, mime_type: str) -> ReceiptData:
+    async def analyze_receipt(
+        self,
+        image_bytes: bytes,
+        mime_type: str,
+        optional_config: Optional[LlmConfig] = None,
+    ) -> ReceiptData:
+        client = self._client
+        if optional_config and optional_config.gemini_api_key:
+            client = genai.Client(api_key=optional_config.gemini_api_key)
+
+        model = _DEFAULT_MODEL
+        if optional_config and optional_config.llm_model:
+            model = optional_config.llm_model
+
+        max_tokens = _DEFAULT_MAX_TOKENS
+        if optional_config and optional_config.max_tokens:
+            max_tokens = optional_config.max_tokens
+
         image_part = types.Part.from_bytes(
             data=image_bytes, mime_type=mime_type)
 
         config = types.GenerateContentConfig(
             temperature=0.3,
-            max_output_tokens=4096,
+            max_output_tokens=max_tokens,
             tools=[_TOOL_DECLARATION],
         )
 
-        print(f"[gemini_client] Enviando imagem para o modelo gemini-3-flash-preview ({len(image_bytes)} bytes, {mime_type})")
+        print(f"[gemini_client] Enviando imagem para o modelo {model} ({len(image_bytes)} bytes, {mime_type})")
         try:
-            response = await self._client.aio.models.generate_content(
-                model="gemini-3-flash-preview",
+            response = await client.aio.models.generate_content(
+                model=model,
                 contents=[image_part, _PROMPT],
                 config=config,
             )

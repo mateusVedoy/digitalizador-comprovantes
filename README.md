@@ -178,3 +178,7 @@ Apenas **JPEG** e **PNG**. Outros formatos serão rejeitados com erro 400.
 - Imagens com boa resolução e texto legível geram melhores resultados.
 - A classificação (income/expense) é feita pelo LLM — em caso de dúvida, revise manualmente.
 - Use `optional_config` para testar diferentes modelos sem alterar a configuração do servidor.
+
+## Fluxograma do projeto
+
+![fluxograma-execucao-api](image.png)
